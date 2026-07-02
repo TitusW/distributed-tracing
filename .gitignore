@@ -1,0 +1,9 @@
+vendor/
+main
+integration.sh
+env.sh
+*.log
+.horusec
+.vscode
+bin/
+*.out
