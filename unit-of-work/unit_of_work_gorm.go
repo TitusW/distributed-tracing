@@ -15,7 +15,7 @@ type gormUnitOfWork struct {
 }
 
 type UnitOfWorkItf interface {
-	Do(context.Context, func(context.Context) error) error
+	Do(ctx context.Context, fn func(txCtx context.Context) error) error
 }
 
 func NewGormUnitOfWork(db *gorm.DB) (uow UnitOfWorkItf) {
