@@ -1,14 +1,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 
-	"github.com/TitusW/accounts/config"
-	financialaccount_handler "github.com/TitusW/accounts/internal/handler/financial_account"
-	financialaccount_repo "github.com/TitusW/accounts/internal/repo/financial_account"
-	financialaccount_usecase "github.com/TitusW/accounts/internal/usecase/financial_account"
+	"github.com/TitusW/notifications/config"
+	notification_handler "github.com/TitusW/notifications/internal/handler/notification"
+	notification_repo "github.com/TitusW/notifications/internal/repo/notification"
+	notificationdispatch_repo "github.com/TitusW/notifications/internal/repo/notification-dispatch"
+	notification_usecase "github.com/TitusW/notifications/internal/usecase/notification"
+	"github.com/TitusW/notifications/internal/worker"
 	unitofwork "github.com/TitusW/unit-of-work"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/postgres"
@@ -17,16 +20,25 @@ import (
 )
 
 func setupRouter(db *gorm.DB) *gin.Engine {
+	ctx := context.Background()
+
 	router := gin.Default()
 
 	uow := unitofwork.NewGormUnitOfWork(db)
+	notificationRepo := notification_repo.New(db)
+	notificationDispatchesRepo := notificationdispatch_repo.New(db)
 
-	financialAccountRepo := financialaccount_repo.New(db)
-	financialAccountUsecase := financialaccount_usecase.New(financialAccountRepo, uow)
-	financialAccountHandler := financialaccount_handler.New(financialAccountUsecase)
+	notificationUsecase := notification_usecase.New(notificationRepo, notificationDispatchesRepo, uow)
+	notificationHandler := notification_handler.New(notificationUsecase)
+
+	workerPool := worker.NewWorkerPool(5, 100, notificationDispatchesRepo)
+	workerPool.Start(ctx)
+
+	dbPoller := worker.NewDBPoller(notificationDispatchesRepo, workerPool)
+	dbPoller.StartPolling(ctx)
 
 	router.GET("/health", func(ctx *gin.Context) {
-		// logger.KargoLog.Info("Server is healthy")
+		// logger
 		ctx.JSON(200, gin.H{
 			"message": "HEALTHY!",
 		})
@@ -34,14 +46,13 @@ func setupRouter(db *gorm.DB) *gin.Engine {
 
 	//Used for metrics test
 	router.GET("/", func(ctx *gin.Context) {
-		// logger.KargoLog.Info("Return ")
+		// logger
 		ctx.JSON(200, gin.H{
-			"message": "Hello this is account service!",
+			"message": "Hello this is notification service!",
 		})
 	})
 
-	router.POST("/accounts/:ksuid/debit", financialAccountHandler.DebitFinancialAccount)
-	router.POST("/accounts/:ksuid/credit", financialAccountHandler.CreditFinancialAccount)
+	router.POST("/notifications/", notificationHandler.CreateNotification)
 
 	return router
 }
@@ -63,7 +74,7 @@ func setupDB(configData config.Config) *gorm.DB {
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		NamingStrategy: schema.NamingStrategy{
-			TablePrefix: "payment.",
+			TablePrefix: "notification.",
 		},
 	})
 

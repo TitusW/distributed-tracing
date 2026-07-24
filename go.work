@@ -3,5 +3,6 @@ go 1.25.0
 use (
 	./accounts
 	./payments
+	./notifications
 	./unit-of-work
 )
